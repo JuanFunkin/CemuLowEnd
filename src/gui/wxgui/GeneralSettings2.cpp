@@ -9,6 +9,7 @@
 #include "Cafe/OS/libs/snd_core/ax.h"
 
 #include <wx/collpane.h>
+#include <wx/button.h>
 #include <wx/clrpicker.h>
 #include <wx/cshelp.h>
 #include <wx/textctrl.h>
@@ -417,6 +418,39 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 
 		box_sizer->Add(graphic_misc_row, 1, wxEXPAND, 5);
 		graphics_panel_sizer->Add(box_sizer, 0, wxEXPAND | wxALL, 5);
+	}
+	{
+		auto lowend_box = new wxStaticBox(graphics_panel, wxID_ANY, _("Cemu Low-End"));
+		auto lowend_sizer = new wxStaticBoxSizer(lowend_box, wxVERTICAL);
+		auto lowend_row = new wxFlexGridSizer(0, 2, 0, 0);
+		lowend_row->SetFlexibleDirection(wxBOTH);
+		lowend_row->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
+
+		auto* lowend_preset = new wxButton(lowend_box, wxID_ANY, _("Apply Low-End preset"));
+		lowend_preset->SetToolTip(_("Turns VSync off, enables asynchronous shader compilation, and disables full GX2DrawDone synchronization. These settings may improve performance but can affect accuracy."));
+		lowend_preset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+			m_vsync->SetSelection(0);
+			m_async_compile->SetValue(true);
+			m_gx2drawdone_sync->SetValue(false);
+			GetConfig().vsync = 0;
+			GetConfig().async_compile = true;
+			GetConfig().gx2drawdone_sync = false;
+		});
+		lowend_sizer->Add(lowend_preset, 0, wxALL, 5);
+
+		auto* resolution_label = new wxStaticText(lowend_box, wxID_ANY, _("Internal resolution target (experimental)"));
+		lowend_row->Add(resolution_label, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		auto* resolution_choice = new wxChoice(lowend_box, wxID_ANY);
+		resolution_choice->Append("720p (1280 x 720)");
+		resolution_choice->Append("480p (854 x 480)");
+		resolution_choice->Append("320p (568 x 320)");
+		resolution_choice->Append("240p (426 x 240)");
+		resolution_choice->SetSelection(0);
+		resolution_choice->SetToolTip(_("This selector is a UI prototype. It does not yet change the game's internal resolution; use a compatible Graphic Pack to change resolution."));
+		lowend_row->Add(resolution_choice, 0, wxALL, 5);
+		lowend_sizer->Add(lowend_row, 0, wxEXPAND, 5);
+		lowend_sizer->Add(new wxStaticText(lowend_box, wxID_ANY, _("Resolution selection is not connected to the renderer yet; configure a compatible Graphic Pack for actual resolution changes.")), 0, wxLEFT | wxRIGHT | wxBOTTOM, 5);
+		graphics_panel_sizer->Add(lowend_sizer, 0, wxEXPAND | wxALL, 5);
 	}
 
 	{
