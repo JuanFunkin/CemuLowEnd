@@ -7,6 +7,9 @@
 #include "Cemu/FileCache/FileCache.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "WindowSystem.h"
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/LowEndShaderWait.h"
+#include <chrono>
 
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #ifdef ENABLE_OPENGL
@@ -661,6 +664,159 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 		// finish frame
 		g_renderer->SwapBuffers(true, true);
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cemu Low-End: shader wait screen
+// Pauses the emulation at a frame boundary while pipelines are still compiling in the background
+// and shows a waiting screen. Uses the same drawing sequence as the shader cache loading screen.
+// ---------------------------------------------------------------------------------------------
+static void LowEndShaderWait_DrawScreen(bool mainWindow, uint32 pendingNow, uint32 pendingPeak, float elapsedSeconds)
+{
+	const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize;
+	sint32 w = 0, h = 0;
+	if (mainWindow)
+		WindowSystem::GetWindowPhysSize(w, h);
+	else
+		WindowSystem::GetPadWindowPhysSize(w, h);
+	if (w <= 0 || h <= 0)
+		return;
+	const Vector2f windowSize{ (float)w, (float)h };
+
+	// opaque background so the screen never shows stale swapchain content
+	ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.0f, 0.0f), ImVec2(windowSize.x, windowSize.y), 0xFF101010);
+
+	ImFont* titleFont = mainWindow ? ImGui_GetFont(windowSize.y / 32.0f) : nullptr;
+	ImFont* infoFont = mainWindow ? ImGui_GetFont(windowSize.y / 48.0f) : nullptr;
+
+	ImGui::SetNextWindowPos(ImVec2(windowSize.x / 2.0f, windowSize.y / 2.0f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+	ImGui::SetNextWindowSize(ImVec2(windowSize.x * 0.5f, 0), ImGuiCond_Always);
+	ImGui::SetNextWindowBgAlpha(0.0f);
+	ImGui::PushStyleColor(ImGuiCol_PlotHistogram, 0xFF888888);
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, 0);
+	if (titleFont)
+		ImGui::PushFont(titleFont);
+	if (ImGui::Begin("Cemu Low-End shader wait", nullptr, kPopupFlags))
+	{
+		const float centerX = ImGui::GetWindowSize().x / 2.0f;
+		std::string text = "Compiling shaders, please wait...";
+		ImGui::SetCursorPosX(centerX - ImGui::CalcTextSize(text.c_str()).x / 2);
+		ImGui::Text("%s", text.c_str());
+		text = "Compilando shaders, espera un momento...";
+		ImGui::SetCursorPosX(centerX - ImGui::CalcTextSize(text.c_str()).x / 2);
+		ImGui::Text("%s", text.c_str());
+
+		const uint32 peak = std::max<uint32>(pendingPeak, 1);
+		const uint32 done = peak - std::min<uint32>(pendingNow, peak);
+		const float fraction = (float)done / (float)peak;
+		ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), "");
+
+		text = fmt::format("{} / {}  ({}%)", done, peak, (int)(fraction * 100.0f));
+		ImGui::SetCursorPosX(centerX - ImGui::CalcTextSize(text.c_str()).x / 2);
+		ImGui::Text("%s", text.c_str());
+		if (infoFont)
+			ImGui::PushFont(infoFont);
+		text = fmt::format("{:.0f}s", elapsedSeconds);
+		ImGui::SetCursorPosX(centerX - ImGui::CalcTextSize(text.c_str()).x / 2);
+		ImGui::Text("%s", text.c_str());
+		if (infoFont)
+			ImGui::PopFont();
+	}
+	ImGui::End();
+	if (titleFont)
+		ImGui::PopFont();
+	ImGui::PopStyleColor(2);
+}
+
+void LowEndShaderWait_OnFrameEnd()
+{
+	using Clock = std::chrono::steady_clock;
+	static Clock::time_point s_lastFrameEnd = Clock::now();
+	static Clock::time_point s_nextAllowedWait = Clock::now();
+	constexpr float kMaxWaitSeconds = 60.0f; // safety net: after this the game continues even if compilation is not finished
+
+	const Clock::time_point now = Clock::now();
+	const double frameTimeMs = std::chrono::duration<double, std::milli>(now - s_lastFrameEnd).count();
+	s_lastFrameEnd = now;
+	const uint32 skippedDraws = LowEndShaderWait::skippedDrawsThisFrame.exchange(0, std::memory_order_relaxed);
+
+	const sint32 mode = GetConfig().lowend.shader_wait_mode.GetValue();
+	if (mode <= 0 || !GetConfig().async_compile.GetValue())
+		return;
+	if (g_renderer == nullptr || g_renderer->GetType() != RendererAPI::Vulkan)
+		return;
+	uint32 pending = LowEndShaderWait::pendingPipelines.load();
+	if (pending == 0 || skippedDraws == 0)
+		return; // nothing is compiling or nothing visible is missing
+	if (now < s_nextAllowedWait)
+		return;
+
+	bool shouldWait;
+	if (mode >= 2)
+		shouldWait = true; // strict: never show a frame with missing objects
+	else
+		shouldWait = (pending >= 6 && skippedDraws >= 8) || frameTimeMs > 120.0; // balanced: only when it is really bad
+	if (!shouldWait)
+		return;
+
+	// fonts have to exist before a frame is started (same requirement as the shader cache loading screen)
+	{
+		sint32 w = 0, h = 0;
+		WindowSystem::GetWindowPhysSize(w, h);
+		if (h > 0)
+		{
+			ImGui_GetFont((float)h / 32.0f);
+			ImGui_GetFont((float)h / 48.0f);
+		}
+	}
+
+	const Clock::time_point waitStart = Clock::now();
+	Clock::time_point lastDraw = waitStart - std::chrono::seconds(1);
+	uint32 peakPending = pending;
+	bool timedOut = false;
+	while (true)
+	{
+		if (Latte_GetStopSignal())
+			break; // emulation is being stopped
+		pending = LowEndShaderWait::pendingPipelines.load();
+		if (pending == 0)
+			break; // everything compiled, continue the game
+		peakPending = std::max(peakPending, pending);
+		const float elapsed = std::chrono::duration<float>(Clock::now() - waitStart).count();
+		if (elapsed >= kMaxWaitSeconds)
+		{
+			timedOut = true;
+			break;
+		}
+		// refresh the screen at about 20 FPS, otherwise let the compile threads work
+		if (Clock::now() - lastDraw < std::chrono::milliseconds(50))
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			continue;
+		}
+
+		g_renderer->BeginFrame(true);
+		if (g_renderer->ImguiBegin(true))
+		{
+			LowEndShaderWait_DrawScreen(true, pending, peakPending, elapsed);
+			g_renderer->ImguiEnd();
+		}
+		g_renderer->BeginFrame(false);
+		if (g_renderer->ImguiBegin(false))
+		{
+			LowEndShaderWait_DrawScreen(false, pending, peakPending, elapsed);
+			g_renderer->ImguiEnd();
+		}
+		g_renderer->SwapBuffers(true, true);
+		lastDraw = Clock::now();
+	}
+
+	if (timedOut)
+		LatteOverlay_pushNotification("Shader compilation is taking very long, continuing the game", 5000);
+
+	// do not count the waiting time as frame time and give the game a moment before another wait can start
+	s_lastFrameEnd = Clock::now();
+	s_nextAllowedWait = s_lastFrameEnd + std::chrono::milliseconds(750);
 }
 
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)

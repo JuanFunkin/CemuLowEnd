@@ -5,6 +5,7 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.h"
 
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/LowEndShaderWait.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cafe/HW/Latte/Core/LatteIndices.h"
@@ -806,6 +807,11 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 			if (baseTexture->overwriteInfo.anisotropicLevel >= 0)
 				maxAniso = baseTexture->overwriteInfo.anisotropicLevel;
 
+			// Cemu Low-End: optional upper limit for anisotropic filtering
+			const sint32 lowEndMaxAniso = GetConfig().lowend.max_anisotropy.GetValue();
+			if (lowEndMaxAniso >= 0 && (sint32)maxAniso > lowEndMaxAniso)
+				maxAniso = (decltype(maxAniso))lowEndMaxAniso;
+
 			if (maxAniso > 0)
 			{
 				samplerInfo.anisotropyEnable = VK_TRUE;
@@ -818,6 +824,39 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 			}
 
 			samplerInfo.mipLodBias = (float)iLodBias / 64.0f;
+
+			// Cemu Low-End: sampler-only texture quality reductions
+			// Only applied to mipmapped textures that are never written by the GPU (so render targets, post-processing
+			// inputs and depth/shadow sampling are not affected). Guest memory and texture contents are never modified.
+			if (baseTexture->mipLevels > 1 && !baseTexture->isUpdatedOnGPU && !shader->textureUsesDepthCompare[relative_textureUnit] && filterMip != Latte::LATTE_SQ_TEX_SAMPLER_WORD0_0::E_Z_FILTER::NONE)
+			{
+				const sint32 lowEndDetailReduction = GetConfig().lowend.texture_detail_reduction.GetValue();
+				if (lowEndDetailReduction > 0)
+				{
+					// skip the largest mip levels but never drop below 128px on the smaller texture side (keeps UI/icons sharp)
+					sint32 skipLevels = 0;
+					sint32 smallestSide = std::min(baseTexture->width, baseTexture->height);
+					while (skipLevels < lowEndDetailReduction && skipLevels < baseTexture->mipLevels - 1 && (smallestSide >> 1) >= 128)
+					{
+						smallestSide >>= 1;
+						skipLevels++;
+					}
+					if (skipLevels > 0)
+					{
+						samplerInfo.minLod = std::max(samplerInfo.minLod, (float)skipLevels);
+						samplerInfo.maxLod = std::max(samplerInfo.maxLod, samplerInfo.minLod);
+					}
+				}
+				const sint32 lowEndExtraLodBias = GetConfig().lowend.extra_lod_bias.GetValue();
+				if (lowEndExtraLodBias > 0)
+				{
+					static const float s_lowEndLodBias[] = { 0.0f, 0.25f, 0.5f, 1.0f };
+					samplerInfo.mipLodBias += s_lowEndLodBias[std::min(lowEndExtraLodBias, 3)];
+					samplerInfo.mipLodBias = std::min(samplerInfo.mipLodBias, 2.0f); // 2.0 is the guaranteed minimum of maxSamplerLodBias
+				}
+				if (GetConfig().lowend.bilinear_mip_filter.GetValue() && samplerInfo.mipmapMode == VK_SAMPLER_MIPMAP_MODE_LINEAR)
+					samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+			}
 
 			// depth compare
 			uint8 depthCompareMode = shader->textureUsesDepthCompare[relative_textureUnit] ? 1 : 0;
@@ -1450,6 +1489,7 @@ void VulkanRenderer::draw_execute_first(uint32 baseVertex, uint32 baseInstance, 
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
 		// invalid/uninitialized pipeline
+		LowEndShaderWait::skippedDrawsThisFrame.fetch_add(1, std::memory_order_relaxed);
 		m_state.activeVertexDS = nullptr;
 		return;
 	}
@@ -1639,6 +1679,7 @@ void VulkanRenderer::draw_execute_continued(uint32 baseVertex, uint32 baseInstan
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
 		// invalid/uninitialized pipeline
+		LowEndShaderWait::skippedDrawsThisFrame.fetch_add(1, std::memory_order_relaxed);
 		//m_state.activeVertexDS = nullptr;
 		return;
 	}

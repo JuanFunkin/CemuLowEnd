@@ -17,6 +17,7 @@
 #include <wx/hyperlink.h>
 
 #include "config/CemuConfig.h"
+#include "config/LowEndTweaks.h"
 #include "config/NetworkSettings.h"
 
 #include "audio/IAudioAPI.h"
@@ -427,7 +428,7 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 		lowend_row->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
 
 		auto* lowend_preset = new wxButton(lowend_box, wxID_ANY, _("Apply Low-End preset"));
-		lowend_preset->SetToolTip(_("Turns VSync off, enables asynchronous shader compilation, and disables full GX2DrawDone synchronization. These settings may improve performance but can affect accuracy."));
+		lowend_preset->SetToolTip(_("Turns VSync off, enables asynchronous shader compilation, disables full GX2DrawDone synchronization, uses the bilinear upscale filter and enables the Low-End options below with moderate values.\nThese settings may improve performance but can slightly reduce visual quality. Audio is not changed."));
 		lowend_preset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
 			m_vsync->SetSelection(0);
 			m_async_compile->SetValue(true);
@@ -435,21 +436,105 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			GetConfig().vsync = 0;
 			GetConfig().async_compile = true;
 			GetConfig().gx2drawdone_sync = false;
+
+			GetConfig().upscale_filter = kLinearFilter;
+			m_upscale_filter->SetSelection(kLinearFilter);
+
+			GetConfig().lowend.texture_detail_reduction = 1;
+			GetConfig().lowend.max_anisotropy = 1;
+			GetConfig().lowend.extra_lod_bias = 0;
+			GetConfig().lowend.bilinear_mip_filter = true;
+			GetConfig().lowend.disable_power_throttling = true;
+			GetConfig().lowend.high_res_timer = true;
+			GetConfig().lowend.shader_wait_mode = 1;
+			m_lowend_texture_detail->SetSelection(1);
+			m_lowend_max_aniso->SetSelection(2);
+			m_lowend_lod_bias->SetSelection(0);
+			m_lowend_bilinear_mips->SetValue(true);
+			m_lowend_power_throttling->SetValue(true);
+			m_lowend_high_res_timer->SetValue(true);
+			m_lowend_shader_wait->SetSelection(1);
+			LowEndTweaks::ApplyFromConfig();
 		});
 		lowend_sizer->Add(lowend_preset, 0, wxALL, 5);
 
-		auto* resolution_label = new wxStaticText(lowend_box, wxID_ANY, _("Internal resolution target (experimental)"));
-		lowend_row->Add(resolution_label, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
-		auto* resolution_choice = new wxChoice(lowend_box, wxID_ANY);
-		resolution_choice->Append("720p (1280 x 720)");
-		resolution_choice->Append("480p (854 x 480)");
-		resolution_choice->Append("320p (568 x 320)");
-		resolution_choice->Append("240p (426 x 240)");
-		resolution_choice->SetSelection(0);
-		resolution_choice->SetToolTip(_("This selector is a UI prototype. It does not yet change the game's internal resolution; use a compatible Graphic Pack to change resolution."));
-		lowend_row->Add(resolution_choice, 0, wxALL, 5);
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Texture detail")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_texture_detail = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_texture_detail->Append(_("Game default"));
+		m_lowend_texture_detail->Append(_("Reduced (1 mip level lower)"));
+		m_lowend_texture_detail->Append(_("Low (2 mip levels lower)"));
+		m_lowend_texture_detail->SetToolTip(_("Samples large mipmapped textures at a lower mip level. Reduces GPU memory bandwidth and can improve FPS on weak GPUs.\nSmall textures (UI, icons) and render targets are not affected.\nVulkan only"));
+		m_lowend_texture_detail->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.texture_detail_reduction = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_texture_detail, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Maximum anisotropic filtering")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_max_aniso = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_max_aniso->Append(_("Game default"));
+		m_lowend_max_aniso->Append(_("Off (1x)"));
+		m_lowend_max_aniso->Append(_("2x"));
+		m_lowend_max_aniso->Append(_("4x"));
+		m_lowend_max_aniso->Append(_("8x"));
+		m_lowend_max_aniso->SetToolTip(_("Sets an upper limit for anisotropic filtering (applies on top of any graphic pack setting). Lower values are faster.\nVulkan only"));
+		m_lowend_max_aniso->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.max_anisotropy = event.GetSelection() - 1;
+		});
+		lowend_row->Add(m_lowend_max_aniso, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Extra texture blur (LOD bias)")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_lod_bias = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_lod_bias->Append(_("Off"));
+		m_lowend_lod_bias->Append(_("+0.25"));
+		m_lowend_lod_bias->Append(_("+0.5"));
+		m_lowend_lod_bias->Append(_("+1.0"));
+		m_lowend_lod_bias->SetToolTip(_("Makes the GPU pick smaller mip levels earlier on mipmapped textures. Slightly softer image, less texture bandwidth.\nVulkan only"));
+		m_lowend_lod_bias->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.extra_lod_bias = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_lod_bias, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Shader wait screen")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_shader_wait = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_shader_wait->Append(_("Off"));
+		m_lowend_shader_wait->Append(_("Balanced (only when compilation is severe)"));
+		m_lowend_shader_wait->Append(_("Strict (whenever objects would be missing)"));
+		m_lowend_shader_wait->SetToolTip(_("When many shaders are still compiling and the game would render with missing objects or very low FPS, Cemu pauses at the end of the frame and shows a waiting screen until the shaders are ready, then continues normally.\nRequires 'Async shader compile' to be enabled.\nVulkan only"));
+		m_lowend_shader_wait->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.shader_wait_mode = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_shader_wait, 0, wxALL, 5);
 		lowend_sizer->Add(lowend_row, 0, wxEXPAND, 5);
-		lowend_sizer->Add(new wxStaticText(lowend_box, wxID_ANY, _("Resolution selection is not connected to the renderer yet; configure a compatible Graphic Pack for actual resolution changes.")), 0, wxLEFT | wxRIGHT | wxBOTTOM, 5);
+
+		auto* lowend_checks = new wxFlexGridSizer(0, 2, 0, 0);
+		m_lowend_bilinear_mips = new wxCheckBox(lowend_box, wxID_ANY, _("Bilinear mip filtering (instead of trilinear)"));
+		m_lowend_bilinear_mips->SetToolTip(_("Replaces trilinear mip filtering with a cheaper bilinear mip selection on mipmapped textures.\nVulkan only"));
+		m_lowend_bilinear_mips->Bind(wxEVT_CHECKBOX, [](wxCommandEvent& event) {
+			GetConfig().lowend.bilinear_mip_filter = event.IsChecked();
+		});
+		lowend_checks->Add(m_lowend_bilinear_mips, 0, wxALL, 5);
+
+		m_lowend_power_throttling = new wxCheckBox(lowend_box, wxID_ANY, _("Disable Windows power throttling"));
+		m_lowend_power_throttling->SetToolTip(_("Prevents Windows from moving Cemu to slower efficiency cores / power saving mode (EcoQoS).\nWindows only"));
+		m_lowend_power_throttling->Bind(wxEVT_CHECKBOX, [](wxCommandEvent& event) {
+			GetConfig().lowend.disable_power_throttling = event.IsChecked();
+			LowEndTweaks::ApplyFromConfig();
+		});
+		lowend_checks->Add(m_lowend_power_throttling, 0, wxALL, 5);
+
+		m_lowend_high_res_timer = new wxCheckBox(lowend_box, wxID_ANY, _("High resolution system timer (1 ms)"));
+		m_lowend_high_res_timer->SetToolTip(_("Requests a more precise Windows timer which can make frame pacing smoother. Slightly higher idle power use.\nWindows only"));
+		m_lowend_high_res_timer->Bind(wxEVT_CHECKBOX, [](wxCommandEvent& event) {
+			GetConfig().lowend.high_res_timer = event.IsChecked();
+			LowEndTweaks::ApplyFromConfig();
+		});
+		lowend_checks->Add(m_lowend_high_res_timer, 0, wxALL, 5);
+#if !BOOST_OS_WINDOWS
+		m_lowend_power_throttling->Disable();
+		m_lowend_high_res_timer->Disable();
+#endif
+		lowend_sizer->Add(lowend_checks, 0, wxEXPAND, 5);
+
 		graphics_panel_sizer->Add(lowend_sizer, 0, wxEXPAND | wxALL, 5);
 	}
 
@@ -1979,6 +2064,13 @@ void GeneralSettings2::ApplyConfig()
 	m_force_mesh_shaders->SetValue(config.force_mesh_shaders);
 #endif
 	m_upscale_filter->SetSelection(config.upscale_filter);
+	m_lowend_texture_detail->SetSelection(config.lowend.texture_detail_reduction.GetValue());
+	m_lowend_max_aniso->SetSelection(config.lowend.max_anisotropy.GetValue() + 1);
+	m_lowend_lod_bias->SetSelection(config.lowend.extra_lod_bias.GetValue());
+	m_lowend_shader_wait->SetSelection(config.lowend.shader_wait_mode.GetValue());
+	m_lowend_bilinear_mips->SetValue(config.lowend.bilinear_mip_filter.GetValue());
+	m_lowend_power_throttling->SetValue(config.lowend.disable_power_throttling.GetValue());
+	m_lowend_high_res_timer->SetValue(config.lowend.high_res_timer.GetValue());
 	m_downscale_filter->SetSelection(config.downscale_filter);
 	m_fullscreen_scaling->SetSelection(config.fullscreen_scaling);
 

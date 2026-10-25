@@ -4,6 +4,7 @@
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/LowEndShaderWait.h"
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
 #include "Cafe/HW/Latte/Core/LatteCachedFBO.h"
@@ -697,6 +698,7 @@ void LatteRenderTarget_itHLESwapScanBuffer()
 #endif
 	LatteQuery_CancelActiveGPU7Queries();
 	LatteBufferCache_notifySwapTVScanBuffer();
+	LowEndShaderWait_OnFrameEnd(); // Cemu Low-End: pause while shaders compile (frame boundary, renderer state is clean)
 	LattePerformanceMonitor_frameBegin();
 }
 

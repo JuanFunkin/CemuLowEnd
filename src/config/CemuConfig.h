@@ -457,6 +457,19 @@ struct CemuConfig
 
 	ConfigValue<bool> vk_accurate_barriers{ true };
 
+	// Cemu Low-End options. Every default below keeps the stock Cemu behavior.
+	// None of these options touch audio, guest memory or emulation accuracy; they only change how the host GPU/CPU is used.
+	struct
+	{
+		ConfigValue<sint32> texture_detail_reduction{ 0 }; // 0 = off, 1/2 = sample 1/2 mip levels lower on large mipmapped textures (Vulkan)
+		ConfigValue<sint32> max_anisotropy{ -1 };          // -1 = game default, 0 = off (1x), 1 = 2x, 2 = 4x, 3 = 8x (Vulkan)
+		ConfigValue<sint32> extra_lod_bias{ 0 };           // 0 = off, 1 = +0.25, 2 = +0.5, 3 = +1.0 on mipmapped textures (Vulkan)
+		ConfigValue<bool> bilinear_mip_filter{ false };    // trilinear -> bilinear mip filtering (Vulkan)
+		ConfigValue<bool> disable_power_throttling{ false }; // Windows only: opt out of EcoQoS/power throttling
+		ConfigValue<bool> high_res_timer{ false };           // Windows only: request 1ms system timer resolution
+		ConfigValue<sint32> shader_wait_mode{ 1 };         // 0 = off, 1 = balanced (wait only when shader compilation is severe), 2 = strict (wait whenever draws would be skipped). Needs async shader compile (Vulkan)
+	} lowend{};
+
 	struct
 	{
 		ScreenPosition position = ScreenPosition::kDisabled;

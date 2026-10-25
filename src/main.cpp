@@ -6,6 +6,7 @@
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "config/CemuConfig.h"
+#include "config/LowEndTweaks.h"
 #include "config/NetworkSettings.h"
 #include "config/LaunchSettings.h"
 #include "input/InputManager.h"
@@ -126,6 +127,7 @@ void CemuCommonInit()
     ExceptionHandler_Init();
 	// read config
 	GetConfigHandle().Load();
+	LowEndTweaks::ApplyFromConfig(); // Cemu Low-End: optional Windows host tweaks
 	if (NetworkConfig::XMLExists())
 		n_config.Load();
 	// parallelize expensive init code

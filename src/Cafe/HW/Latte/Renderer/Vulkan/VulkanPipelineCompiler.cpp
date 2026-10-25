@@ -4,6 +4,7 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/LowEndShaderWait.h"
 #include "Cafe/OS/libs/gx2/GX2.h"
 #include "config/ActiveSettings.h"
 #include "util/helpers/helpers.h"
@@ -1091,14 +1092,28 @@ static void compilePipeline_thread(sint32 threadIndex)
 		PipelineCompiler* request = s_pipelineCompileRequests.pop();
 		if (!request)
 			continue;
-		request->Compile(true, false, true);
+		// Cemu Low-End: a failing compile must never take down the whole emulator, the draw simply stays skipped
+		try
+		{
+			request->Compile(true, false, true);
+		}
+		catch (const std::exception& e)
+		{
+			cemuLog_log(LogType::Force, "Vulkan: Pipeline compile thread caught exception: {}", e.what());
+		}
+		catch (...)
+		{
+			cemuLog_log(LogType::Force, "Vulkan: Pipeline compile thread caught unknown exception");
+		}
 		delete request;
+		LowEndShaderWait::pendingPipelines.fetch_sub(1);
 	}
 }
 
 void PipelineCompiler::CompileThreadPool_Start()
 {
 	cemu_assert_debug(s_compileThreads.empty());
+	LowEndShaderWait::pendingPipelines = 0;
 	s_compileThreadsShutdownSignal = false;
 	uint32 numCompileThreads;
 
@@ -1134,9 +1149,11 @@ void PipelineCompiler::CompileThreadPool_Stop()
 			delete pipelineCompiler;
 	}
 	s_compileThreads.clear();
+	LowEndShaderWait::pendingPipelines = 0;
 }
 
 void PipelineCompiler::CompileThreadPool_QueueCompilation(PipelineCompiler* v)
 {
+	LowEndShaderWait::pendingPipelines.fetch_add(1);
 	s_pipelineCompileRequests.push(v);
 }

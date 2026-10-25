@@ -144,6 +144,22 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
+	// Cemu Low-End options
+	auto lowend_node = graphic.get("LowEnd");
+	if (lowend_node.valid())
+	{
+		sint32 textureDetailReduction = lowend_node.get("TextureDetailReduction", 0);
+		sint32 maxAnisotropy = lowend_node.get("MaxAnisotropy", -1);
+		sint32 extraLodBias = lowend_node.get("ExtraLodBias", 0);
+		lowend.texture_detail_reduction = std::clamp<sint32>(textureDetailReduction, 0, 2);
+		lowend.max_anisotropy = std::clamp<sint32>(maxAnisotropy, -1, 3);
+		lowend.extra_lod_bias = std::clamp<sint32>(extraLodBias, 0, 3);
+		lowend.bilinear_mip_filter = lowend_node.get("BilinearMipFilter", false);
+		lowend.disable_power_throttling = lowend_node.get("DisablePowerThrottling", false);
+		lowend.high_res_timer = lowend_node.get("HighResTimer", false);
+		sint32 shaderWaitMode = lowend_node.get("ShaderWaitMode", 1);
+		lowend.shader_wait_mode = std::clamp<sint32>(shaderWaitMode, 0, 2);
+	}
 #ifdef ENABLE_METAL
 	force_mesh_shaders = graphic.get("ForceMeshShaders", false);
 #endif
@@ -378,6 +394,14 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);
+	auto lowend_node = graphic.set("LowEnd");
+	lowend_node.set("TextureDetailReduction", lowend.texture_detail_reduction.GetValue());
+	lowend_node.set("MaxAnisotropy", lowend.max_anisotropy.GetValue());
+	lowend_node.set("ExtraLodBias", lowend.extra_lod_bias.GetValue());
+	lowend_node.set("BilinearMipFilter", lowend.bilinear_mip_filter.GetValue());
+	lowend_node.set("DisablePowerThrottling", lowend.disable_power_throttling.GetValue());
+	lowend_node.set("HighResTimer", lowend.high_res_timer.GetValue());
+	lowend_node.set("ShaderWaitMode", lowend.shader_wait_mode.GetValue());
 
 	auto overlay_node = graphic.set("Overlay");
 	overlay_node.set("Position", overlay.position);
