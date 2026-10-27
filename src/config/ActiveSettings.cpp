@@ -70,7 +70,13 @@ CPUMode ActiveSettings::GetCPUMode()
 
 	if (mode == CPUMode::Auto)
 	{
-		if (GetPhysicalCoreCount() >= 4)
+		// Cemu Low-End: optional manual choice (the game profile still has priority)
+		const sint32 lowEndCpuMode = GetConfig().lowend.cpu_mode_override.GetValue();
+		if (lowEndCpuMode == 1)
+			mode = CPUMode::SinglecoreRecompiler;
+		else if (lowEndCpuMode == 2)
+			mode = CPUMode::MulticoreRecompiler;
+		else if (GetPhysicalCoreCount() >= 4)
 			mode = CPUMode::MulticoreRecompiler;
 		else
 			mode = CPUMode::SinglecoreRecompiler;

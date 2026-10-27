@@ -174,6 +174,14 @@ void gameProfile_load()
 	// apply some settings immediately
 	ppcThreadQuantum = g_current_game_profile->GetThreadQuantum();
 
+	// Cemu Low-End: optional larger thread quantum (fewer PPC thread switches). A per-game profile value always wins.
+	{
+		static const uint32 s_lowEndQuantum[] = { 0, 60000, 80000, 100000 };
+		const sint32 quantumIndex = std::clamp<sint32>(GetConfig().lowend.thread_quantum.GetValue(), 0, 3);
+		if (quantumIndex > 0 && g_current_game_profile->GetThreadQuantum() == GameProfile::kThreadQuantumDefault)
+			ppcThreadQuantum = s_lowEndQuantum[quantumIndex];
+	}
+
 	if (ppcThreadQuantum != GameProfile::kThreadQuantumDefault)
 		cemuLog_log(LogType::Force, "Thread quantum set to {}", ppcThreadQuantum);
 }

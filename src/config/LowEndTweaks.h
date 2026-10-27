@@ -30,6 +30,17 @@ namespace LowEndTweaks
 		SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &state, sizeof(state));
 	}
 
+	// 0 = normal, 1 = above normal (stock Cemu), 2 = high
+	inline void SetProcessPriorityLevel(sint32 level)
+	{
+		DWORD priorityClass = NORMAL_PRIORITY_CLASS;
+		if (level >= 2)
+			priorityClass = HIGH_PRIORITY_CLASS;
+		else if (level == 1)
+			priorityClass = ABOVE_NORMAL_PRIORITY_CLASS;
+		SetPriorityClass(GetCurrentProcess(), priorityClass);
+	}
+
 	// Request a 1ms system timer resolution (better sleep/wait precision -> steadier frame pacing).
 	// Loaded dynamically so no extra import library is required.
 	inline void SetHighResTimer(bool enabled)
@@ -56,6 +67,7 @@ namespace LowEndTweaks
 {
 	inline void SetPowerThrottlingDisabled(bool) {}
 	inline void SetHighResTimer(bool) {}
+	inline void SetProcessPriorityLevel(sint32) {}
 }
 
 #endif
@@ -67,5 +79,6 @@ namespace LowEndTweaks
 	{
 		SetPowerThrottlingDisabled(GetConfig().lowend.disable_power_throttling.GetValue());
 		SetHighResTimer(GetConfig().lowend.high_res_timer.GetValue());
+		SetProcessPriorityLevel(GetConfig().lowend.process_priority.GetValue());
 	}
 }

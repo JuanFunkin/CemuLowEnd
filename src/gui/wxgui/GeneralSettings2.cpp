@@ -447,6 +447,7 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			GetConfig().lowend.disable_power_throttling = true;
 			GetConfig().lowend.high_res_timer = true;
 			GetConfig().lowend.shader_wait_mode = 1;
+			GetConfig().lowend.process_priority = 2;
 			m_lowend_texture_detail->SetSelection(1);
 			m_lowend_max_aniso->SetSelection(2);
 			m_lowend_lod_bias->SetSelection(0);
@@ -454,6 +455,7 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			m_lowend_power_throttling->SetValue(true);
 			m_lowend_high_res_timer->SetValue(true);
 			m_lowend_shader_wait->SetSelection(1);
+			m_lowend_priority->SetSelection(2);
 			LowEndTweaks::ApplyFromConfig();
 		});
 		lowend_sizer->Add(lowend_preset, 0, wxALL, 5);
@@ -504,6 +506,44 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			GetConfig().lowend.shader_wait_mode = event.GetSelection();
 		});
 		lowend_row->Add(m_lowend_shader_wait, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("CPU mode")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_cpu_mode = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_cpu_mode->Append(_("Automatic"));
+		m_lowend_cpu_mode->Append(_("Singlecore recompiler"));
+		m_lowend_cpu_mode->Append(_("Multicore recompiler"));
+		m_lowend_cpu_mode->SetToolTip(_("Automatic uses the multicore recompiler only with 4 or more physical CPU cores. If your CPU has 2 cores with hyperthreading, try 'Multicore recompiler' and compare the FPS.\nTakes effect the next time a game is started. A per-game profile still has priority."));
+		m_lowend_cpu_mode->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.cpu_mode_override = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_cpu_mode, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Thread quantum")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_thread_quantum = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_thread_quantum->Append(_("Game default (45000)"));
+		m_lowend_thread_quantum->Append(_("60000"));
+		m_lowend_thread_quantum->Append(_("80000"));
+		m_lowend_thread_quantum->Append(_("100000"));
+		m_lowend_thread_quantum->SetToolTip(_("Larger values mean fewer emulated thread switches, which can improve CPU bound performance. Very large values can cause problems in some games, so increase it step by step.\nTakes effect the next time a game is started. A per-game profile still has priority."));
+		m_lowend_thread_quantum->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.thread_quantum = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_thread_quantum, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Process priority")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_priority = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_priority->Append(_("Normal"));
+		m_lowend_priority->Append(_("Above normal (default)"));
+		m_lowend_priority->Append(_("High"));
+		m_lowend_priority->SetToolTip(_("Gives Cemu more CPU time compared to background programs. High can make other programs respond slower while Cemu is running.\nWindows only"));
+		m_lowend_priority->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.process_priority = event.GetSelection();
+			LowEndTweaks::ApplyFromConfig();
+		});
+		lowend_row->Add(m_lowend_priority, 0, wxALL, 5);
+#if !BOOST_OS_WINDOWS
+		m_lowend_priority->Disable();
+#endif
 		lowend_sizer->Add(lowend_row, 0, wxEXPAND, 5);
 
 		auto* lowend_checks = new wxFlexGridSizer(0, 2, 0, 0);
@@ -529,6 +569,13 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			LowEndTweaks::ApplyFromConfig();
 		});
 		lowend_checks->Add(m_lowend_high_res_timer, 0, wxALL, 5);
+
+		m_lowend_no_accurate_barriers = new wxCheckBox(lowend_box, wxID_ANY, _("Disable accurate barriers (may flicker)"));
+		m_lowend_no_accurate_barriers->SetToolTip(_("Skips some Vulkan synchronization. Can improve performance on weak GPUs but may cause flickering graphics in some games. Not part of the preset, only enable it if you need the extra FPS.\nVulkan only"));
+		m_lowend_no_accurate_barriers->Bind(wxEVT_CHECKBOX, [](wxCommandEvent& event) {
+			GetConfig().vk_accurate_barriers = !event.IsChecked();
+		});
+		lowend_checks->Add(m_lowend_no_accurate_barriers, 0, wxALL, 5);
 #if !BOOST_OS_WINDOWS
 		m_lowend_power_throttling->Disable();
 		m_lowend_high_res_timer->Disable();
@@ -2068,6 +2115,10 @@ void GeneralSettings2::ApplyConfig()
 	m_lowend_max_aniso->SetSelection(config.lowend.max_anisotropy.GetValue() + 1);
 	m_lowend_lod_bias->SetSelection(config.lowend.extra_lod_bias.GetValue());
 	m_lowend_shader_wait->SetSelection(config.lowend.shader_wait_mode.GetValue());
+	m_lowend_cpu_mode->SetSelection(config.lowend.cpu_mode_override.GetValue());
+	m_lowend_thread_quantum->SetSelection(config.lowend.thread_quantum.GetValue());
+	m_lowend_priority->SetSelection(config.lowend.process_priority.GetValue());
+	m_lowend_no_accurate_barriers->SetValue(!config.vk_accurate_barriers.GetValue());
 	m_lowend_bilinear_mips->SetValue(config.lowend.bilinear_mip_filter.GetValue());
 	m_lowend_power_throttling->SetValue(config.lowend.disable_power_throttling.GetValue());
 	m_lowend_high_res_timer->SetValue(config.lowend.high_res_timer.GetValue());

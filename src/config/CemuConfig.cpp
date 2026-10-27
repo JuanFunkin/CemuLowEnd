@@ -159,6 +159,12 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		lowend.high_res_timer = lowend_node.get("HighResTimer", false);
 		sint32 shaderWaitMode = lowend_node.get("ShaderWaitMode", 1);
 		lowend.shader_wait_mode = std::clamp<sint32>(shaderWaitMode, 0, 2);
+		sint32 cpuModeOverride = lowend_node.get("CpuModeOverride", 0);
+		sint32 threadQuantum = lowend_node.get("ThreadQuantum", 0);
+		sint32 processPriority = lowend_node.get("ProcessPriority", 1);
+		lowend.cpu_mode_override = std::clamp<sint32>(cpuModeOverride, 0, 2);
+		lowend.thread_quantum = std::clamp<sint32>(threadQuantum, 0, 3);
+		lowend.process_priority = std::clamp<sint32>(processPriority, 0, 2);
 	}
 #ifdef ENABLE_METAL
 	force_mesh_shaders = graphic.get("ForceMeshShaders", false);
@@ -402,6 +408,9 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	lowend_node.set("DisablePowerThrottling", lowend.disable_power_throttling.GetValue());
 	lowend_node.set("HighResTimer", lowend.high_res_timer.GetValue());
 	lowend_node.set("ShaderWaitMode", lowend.shader_wait_mode.GetValue());
+	lowend_node.set("CpuModeOverride", lowend.cpu_mode_override.GetValue());
+	lowend_node.set("ThreadQuantum", lowend.thread_quantum.GetValue());
+	lowend_node.set("ProcessPriority", lowend.process_priority.GetValue());
 
 	auto overlay_node = graphic.set("Overlay");
 	overlay_node.set("Position", overlay.position);

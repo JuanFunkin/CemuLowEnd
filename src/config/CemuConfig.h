@@ -468,6 +468,9 @@ struct CemuConfig
 		ConfigValue<bool> disable_power_throttling{ false }; // Windows only: opt out of EcoQoS/power throttling
 		ConfigValue<bool> high_res_timer{ false };           // Windows only: request 1ms system timer resolution
 		ConfigValue<sint32> shader_wait_mode{ 1 };         // 0 = off, 1 = balanced (wait only when shader compilation is severe), 2 = strict (wait whenever draws would be skipped). Needs async shader compile (Vulkan)
+		ConfigValue<sint32> cpu_mode_override{ 0 };        // 0 = automatic (stock), 1 = singlecore recompiler, 2 = multicore recompiler. Only used when the game profile does not set a CPU mode
+		ConfigValue<sint32> thread_quantum{ 0 };           // 0 = game profile (stock), 1 = 60000, 2 = 80000, 3 = 100000 PPC instructions per thread slice. Only used when the game profile keeps the default
+		ConfigValue<sint32> process_priority{ 1 };         // Windows only: 0 = normal, 1 = above normal (stock), 2 = high
 	} lowend{};
 
 	struct
