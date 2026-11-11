@@ -3,6 +3,7 @@
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/cpu_features.h"
+#include "config/CemuConfig.h"
 
 std::unordered_set<LatteTexture*> g_allTextures;
 
@@ -356,10 +357,29 @@ bool LatteTC_CleanupCheckTexture(LatteTexture* texture, uint32 currentTick)
 	uint32 currentFrameCount = LatteGPUState.frameCounter;
 	uint32 ticksSinceLastAccess = currentTick - texture->lastAccessTick;
 	uint32 framesSinceLastAccess = currentFrameCount - texture->lastAccessFrameCount;
+	// Cemu Low-End: optional faster cleanup of unused textures to save RAM / shared GPU memory
+	// (only RAM-backed textures and views are affected, they are re-created from guest memory when needed again)
+	uint32 unusedTextureTicks = 120 * 1000, unusedTextureFrames = 2000;
+	uint32 unusedViewTicks = 5 * 1000, unusedViewFrames = 30;
+	const sint32 cleanupMode = GetConfig().lowend.texture_cleanup_mode.GetValue();
+	if (cleanupMode == 1)
+	{
+		unusedTextureTicks = 30 * 1000;
+		unusedTextureFrames = 600;
+		unusedViewTicks = 3 * 1000;
+		unusedViewFrames = 20;
+	}
+	else if (cleanupMode >= 2)
+	{
+		unusedTextureTicks = 10 * 1000;
+		unusedTextureFrames = 300;
+		unusedViewTicks = 2 * 1000;
+		unusedViewFrames = 15;
+	}
 	if( !texture->isUpdatedOnGPU )
 	{
 		// RAM-only textures are safe to be deleted since we can always restore them from RAM
-		if( ticksSinceLastAccess >= (120*1000) && framesSinceLastAccess >= 2000 )
+		if( ticksSinceLastAccess >= unusedTextureTicks && framesSinceLastAccess >= unusedTextureFrames )
 		{
 			LatteTexture_Delete(texture);
 			return true;
@@ -373,7 +393,7 @@ bool LatteTC_CleanupCheckTexture(LatteTexture* texture, uint32 currentTick)
 		return true;
 	}
 	// if unused for more than 5 seconds, start deleting views since they are cheap to recreate
-	if (ticksSinceLastAccess >= 5 * 1000 && framesSinceLastAccess >= 30)
+	if (ticksSinceLastAccess >= unusedViewTicks && framesSinceLastAccess >= unusedViewFrames)
 	{
 		for (sint32 i = 0; i < 3; i++)
 		{

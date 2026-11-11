@@ -1087,6 +1087,16 @@ static void compilePipeline_thread(sint32 threadIndex)
 	if(threadIndex != 0)
 		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 #endif
+#ifdef _WIN32
+	// Cemu Low-End: optional lower priority for all compile threads (including the first one)
+	{
+		const sint32 lowEndPriority = GetConfig().lowend.compile_thread_priority.GetValue();
+		if (lowEndPriority == 1)
+			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+		else if (lowEndPriority >= 2)
+			SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+	}
+#endif
 	while (!s_compileThreadsShutdownSignal)
 	{
 		PipelineCompiler* request = s_pipelineCompileRequests.pop();
@@ -1124,6 +1134,11 @@ void PipelineCompiler::CompileThreadPool_Start()
 		numCompileThreads = 2 + (cpuCoreCount - 3); // 2 plus one additionally for every extra core above 3
 
 	numCompileThreads = std::min(numCompileThreads, 8u); // cap at 8
+
+	// Cemu Low-End: optional fixed number of compile threads (fewer threads leave more CPU time for the emulation)
+	const sint32 lowEndCompileThreads = GetConfig().lowend.compile_threads.GetValue();
+	if (lowEndCompileThreads > 0)
+		numCompileThreads = (uint32)lowEndCompileThreads;
 
 	for (uint32_t i = 0; i < numCompileThreads; i++)
 	{

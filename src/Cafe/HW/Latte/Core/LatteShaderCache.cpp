@@ -78,6 +78,7 @@ bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderIn
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId);
 bool LatteShaderCache_updatePipelineLoadingProgress();
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines);
+static void LowEndShaderCache_ImportFromFolder(uint64 titleId); // Cemu Low-End
 
 struct
 {
@@ -375,6 +376,7 @@ void LatteShaderCache_Load()
 	std::error_code ec;
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/transferable"), ec);
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
+	LowEndShaderCache_ImportFromFolder(cacheTitleId); // Cemu Low-End: optional import of shader caches
 	// initialize renderer specific caches
 	switch(g_renderer->GetType())
 	{
@@ -541,6 +543,7 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 	const auto textColor = 0xFF888888;
 
 	auto lastFrameUpdate = tick_cached();
+	const auto lowEndEtaStart = std::chrono::steady_clock::now(); // Cemu Low-End: used for the remaining time estimate
 
 	while (true)
 	{
@@ -618,6 +621,21 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 					text = fmt::format("{}/{} ({}%)", g_shaderCacheLoaderState.loadedShaderFiles, g_shaderCacheLoaderState.shaderFileCount, (int)(percentLoaded * 100));
 				ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
 				ImGui::Text("%s", text.c_str());
+
+				// Cemu Low-End: estimated remaining time (needs a little progress first to be meaningful)
+				if (percentLoaded > 0.02f && percentLoaded < 1.0f)
+				{
+					const double elapsedSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - lowEndEtaStart).count();
+					const sint32 remainingSeconds = (sint32)(elapsedSeconds * (1.0 - percentLoaded) / percentLoaded);
+					if (remainingSeconds >= 3600)
+						text = fmt::format("~{} h {} min remaining", remainingSeconds / 3600, (remainingSeconds % 3600) / 60);
+					else if (remainingSeconds >= 60)
+						text = fmt::format("~{} min {} s remaining", remainingSeconds / 60, remainingSeconds % 60);
+					else
+						text = fmt::format("~{} s remaining", remainingSeconds);
+					ImGui::SetCursorPosX(width - ImGui::CalcTextSize(text.c_str()).x / 2);
+					ImGui::Text("%s", text.c_str());
+				}
 			}
 			ImGui::End();
 			ImGui::PopFont();
@@ -664,6 +682,61 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 		// finish frame
 		g_renderer->SwapBuffers(true, true);
 	}
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cemu Low-End: shader cache import
+// Copies shader caches for the current title from a user selected folder into the cache directory.
+// A cache that is already present is only replaced if the imported one is larger, and then it is kept as
+// "<name>.local-backup" so nothing is ever lost. Shader caches can not be generated without running the game,
+// so this is meant for caches created on another PC or backed up earlier.
+// ---------------------------------------------------------------------------------------------
+static void LowEndShaderCache_ImportFromFolder(uint64 titleId)
+{
+	const std::string folder = GetConfig().lowend.shader_import_folder.GetValue();
+	if (folder.empty())
+		return;
+	std::error_code ec;
+	const fs::path importDir = _utf8ToPath(folder);
+	if (!fs::is_directory(importDir, ec))
+	{
+		cemuLog_log(LogType::Force, "Shader import: folder does not exist: {}", folder);
+		return;
+	}
+
+	auto importFile = [&](const std::string& fileName, bool onlyIfNotPresent) -> bool {
+		const fs::path src = importDir / _utf8ToPath(fileName);
+		if (!fs::is_regular_file(src, ec))
+			return false;
+		const uintmax_t srcSize = fs::file_size(src, ec);
+		if (ec || srcSize == 0)
+			return false;
+		const fs::path dst = ActiveSettings::GetCachePath("shaderCache/transferable/{}", fileName);
+		if (fs::is_regular_file(dst, ec))
+		{
+			const uintmax_t dstSize = fs::file_size(dst, ec);
+			if (!ec && (onlyIfNotPresent || srcSize <= dstSize))
+				return false; // keep what we already have
+			fs::path backup = dst;
+			backup += ".local-backup";
+			fs::remove(backup, ec);
+			fs::rename(dst, backup, ec);
+			if (ec)
+				return false;
+		}
+		fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
+		if (ec)
+		{
+			cemuLog_log(LogType::Force, "Shader import: failed to copy {}", fileName);
+			return false;
+		}
+		cemuLog_log(LogType::Force, "Shader import: imported {} ({} KiB)", fileName, (uint64)(srcSize / 1024));
+		return true;
+	};
+
+	// the pipeline cache refers to the shaders, so it is only imported together with a newly imported shader cache
+	if (importFile(fmt::format("{:016x}_shaders.bin", titleId), false))
+		importFile(fmt::format("{:016x}_vkpipeline.bin", titleId), false);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -165,6 +165,13 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		lowend.cpu_mode_override = std::clamp<sint32>(cpuModeOverride, 0, 2);
 		lowend.thread_quantum = std::clamp<sint32>(threadQuantum, 0, 3);
 		lowend.process_priority = std::clamp<sint32>(processPriority, 0, 2);
+		sint32 textureCleanupMode = lowend_node.get("TextureCleanupMode", 0);
+		sint32 compileThreads = lowend_node.get("CompileThreads", 0);
+		sint32 compileThreadPriority = lowend_node.get("CompileThreadPriority", 0);
+		lowend.texture_cleanup_mode = std::clamp<sint32>(textureCleanupMode, 0, 2);
+		lowend.compile_threads = std::clamp<sint32>(compileThreads, 0, 2);
+		lowend.compile_thread_priority = std::clamp<sint32>(compileThreadPriority, 0, 2);
+		lowend.shader_import_folder = lowend_node.get("ShaderImportFolder", "");
 	}
 #ifdef ENABLE_METAL
 	force_mesh_shaders = graphic.get("ForceMeshShaders", false);
@@ -411,6 +418,10 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	lowend_node.set("CpuModeOverride", lowend.cpu_mode_override.GetValue());
 	lowend_node.set("ThreadQuantum", lowend.thread_quantum.GetValue());
 	lowend_node.set("ProcessPriority", lowend.process_priority.GetValue());
+	lowend_node.set("TextureCleanupMode", lowend.texture_cleanup_mode.GetValue());
+	lowend_node.set("CompileThreads", lowend.compile_threads.GetValue());
+	lowend_node.set("CompileThreadPriority", lowend.compile_thread_priority.GetValue());
+	lowend_node.set("ShaderImportFolder", lowend.shader_import_folder.GetValue().c_str());
 
 	auto overlay_node = graphic.set("Overlay");
 	overlay_node.set("Position", overlay.position);

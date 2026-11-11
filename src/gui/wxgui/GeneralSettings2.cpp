@@ -448,6 +448,8 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			GetConfig().lowend.high_res_timer = true;
 			GetConfig().lowend.shader_wait_mode = 1;
 			GetConfig().lowend.process_priority = 2;
+			GetConfig().lowend.texture_cleanup_mode = 1;
+			GetConfig().lowend.compile_thread_priority = 1;
 			m_lowend_texture_detail->SetSelection(1);
 			m_lowend_max_aniso->SetSelection(2);
 			m_lowend_lod_bias->SetSelection(0);
@@ -456,6 +458,8 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			m_lowend_high_res_timer->SetValue(true);
 			m_lowend_shader_wait->SetSelection(1);
 			m_lowend_priority->SetSelection(2);
+			m_lowend_texture_cleanup->SetSelection(1);
+			m_lowend_compile_priority->SetSelection(1);
 			LowEndTweaks::ApplyFromConfig();
 		});
 		lowend_sizer->Add(lowend_preset, 0, wxALL, 5);
@@ -544,6 +548,42 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 #if !BOOST_OS_WINDOWS
 		m_lowend_priority->Disable();
 #endif
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Texture cache cleanup")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_texture_cleanup = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_texture_cleanup->Append(_("Default"));
+		m_lowend_texture_cleanup->Append(_("Faster (saves RAM)"));
+		m_lowend_texture_cleanup->Append(_("Aggressive (saves the most RAM)"));
+		m_lowend_texture_cleanup->SetToolTip(_("Frees textures that have not been used for a while much earlier. Helps PCs with little RAM or shared graphics memory. Freed textures are loaded again from game memory when needed, which costs a bit of CPU time."));
+		m_lowend_texture_cleanup->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.texture_cleanup_mode = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_texture_cleanup, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Shader compile threads")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_compile_threads = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_compile_threads->Append(_("Automatic"));
+		m_lowend_compile_threads->Append(_("1 thread"));
+		m_lowend_compile_threads->Append(_("2 threads"));
+		m_lowend_compile_threads->SetToolTip(_("Number of background threads that compile shaders. Fewer threads leave more CPU time for the game on CPUs with few cores, but new shaders take longer to become ready.\nVulkan only. Takes effect the next time a game is started."));
+		m_lowend_compile_threads->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.compile_threads = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_compile_threads, 0, wxALL, 5);
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Shader compile priority")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_compile_priority = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_compile_priority->Append(_("Default"));
+		m_lowend_compile_priority->Append(_("Below normal"));
+		m_lowend_compile_priority->Append(_("Lowest"));
+		m_lowend_compile_priority->SetToolTip(_("Lets the game threads win against shader compilation when the CPU is busy. New shaders may take longer to become ready.\nVulkan only, Windows only. Takes effect the next time a game is started."));
+		m_lowend_compile_priority->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.compile_thread_priority = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_compile_priority, 0, wxALL, 5);
+#if !BOOST_OS_WINDOWS
+		m_lowend_compile_priority->Disable();
+#endif
 		lowend_sizer->Add(lowend_row, 0, wxEXPAND, 5);
 
 		auto* lowend_checks = new wxFlexGridSizer(0, 2, 0, 0);
@@ -581,6 +621,23 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 		m_lowend_high_res_timer->Disable();
 #endif
 		lowend_sizer->Add(lowend_checks, 0, wxEXPAND, 5);
+
+		auto* lowend_import_row = new wxBoxSizer(wxHORIZONTAL);
+		lowend_import_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Shader cache import folder")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_shader_import = new wxTextCtrl(lowend_box, wxID_ANY);
+		m_lowend_shader_import->SetToolTip(_("Optional. Folder that contains shader caches for your games (files named <titleid>_shaders.bin and <titleid>_vkpipeline.bin, for example made on a faster PC or backed up earlier). When a game starts, a larger cache found here replaces the one you have (your old one is kept as .local-backup).\nCemu cannot download shader caches by itself, they are created while a game is played."));
+		m_lowend_shader_import->Bind(wxEVT_TEXT, [this](wxCommandEvent&) {
+			GetConfig().lowend.shader_import_folder = std::string(m_lowend_shader_import->GetValue().ToUTF8().data());
+		});
+		lowend_import_row->Add(m_lowend_shader_import, 1, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		auto* lowend_import_browse = new wxButton(lowend_box, wxID_ANY, _("Browse"));
+		lowend_import_browse->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+			wxDirDialog dialog(this, _("Select the shader cache folder"), m_lowend_shader_import->GetValue());
+			if (dialog.ShowModal() == wxID_OK)
+				m_lowend_shader_import->SetValue(dialog.GetPath());
+		});
+		lowend_import_row->Add(lowend_import_browse, 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		lowend_sizer->Add(lowend_import_row, 0, wxEXPAND, 5);
 
 		graphics_panel_sizer->Add(lowend_sizer, 0, wxEXPAND | wxALL, 5);
 	}
@@ -2118,6 +2175,10 @@ void GeneralSettings2::ApplyConfig()
 	m_lowend_cpu_mode->SetSelection(config.lowend.cpu_mode_override.GetValue());
 	m_lowend_thread_quantum->SetSelection(config.lowend.thread_quantum.GetValue());
 	m_lowend_priority->SetSelection(config.lowend.process_priority.GetValue());
+	m_lowend_texture_cleanup->SetSelection(config.lowend.texture_cleanup_mode.GetValue());
+	m_lowend_compile_threads->SetSelection(config.lowend.compile_threads.GetValue());
+	m_lowend_compile_priority->SetSelection(config.lowend.compile_thread_priority.GetValue());
+	m_lowend_shader_import->SetValue(wxString::FromUTF8(config.lowend.shader_import_folder.GetValue().c_str()));
 	m_lowend_no_accurate_barriers->SetValue(!config.vk_accurate_barriers.GetValue());
 	m_lowend_bilinear_mips->SetValue(config.lowend.bilinear_mip_filter.GetValue());
 	m_lowend_power_throttling->SetValue(config.lowend.disable_power_throttling.GetValue());

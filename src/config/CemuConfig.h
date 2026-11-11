@@ -471,6 +471,10 @@ struct CemuConfig
 		ConfigValue<sint32> cpu_mode_override{ 0 };        // 0 = automatic (stock), 1 = singlecore recompiler, 2 = multicore recompiler. Only used when the game profile does not set a CPU mode
 		ConfigValue<sint32> thread_quantum{ 0 };           // 0 = game profile (stock), 1 = 60000, 2 = 80000, 3 = 100000 PPC instructions per thread slice. Only used when the game profile keeps the default
 		ConfigValue<sint32> process_priority{ 1 };         // Windows only: 0 = normal, 1 = above normal (stock), 2 = high
+		ConfigValue<sint32> texture_cleanup_mode{ 0 };     // 0 = stock, 1 = faster (frees unused textures after ~30s), 2 = aggressive (~10s). Saves RAM/shared GPU memory
+		ConfigValue<sint32> compile_threads{ 0 };          // 0 = automatic (stock), 1 or 2 = fixed number of background pipeline compile threads (Vulkan)
+		ConfigValue<sint32> compile_thread_priority{ 0 };  // Windows only: 0 = normal (stock), 1 = below normal, 2 = lowest
+		ConfigValue<std::string> shader_import_folder{};   // optional folder with shader caches (<titleid>_shaders.bin / <titleid>_vkpipeline.bin) that are imported when a game starts
 	} lowend{};
 
 	struct
