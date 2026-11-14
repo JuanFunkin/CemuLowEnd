@@ -1102,6 +1102,7 @@ static void compilePipeline_thread(sint32 threadIndex)
 		PipelineCompiler* request = s_pipelineCompileRequests.pop();
 		if (!request)
 			continue;
+		LowEndShaderWait::WaitWhileRenderThreadCompiles(); // Cemu Low-End: let the render thread finish its own compile first
 		// Cemu Low-End: a failing compile must never take down the whole emulator, the draw simply stays skipped
 		try
 		{
@@ -1139,6 +1140,8 @@ void PipelineCompiler::CompileThreadPool_Start()
 	const sint32 lowEndCompileThreads = GetConfig().lowend.compile_threads.GetValue();
 	if (lowEndCompileThreads > 0)
 		numCompileThreads = (uint32)lowEndCompileThreads;
+	else if (cpuCoreCount <= 4)
+		numCompileThreads = 1; // automatic: on CPUs with 4 cores or fewer more compile threads only fight with the game for CPU time
 
 	for (uint32_t i = 0; i < numCompileThreads; i++)
 	{

@@ -261,7 +261,10 @@ PipelineInfo* VulkanRenderer::draw_createGraphicsPipeline(uint32 indexCount)
 	else
 	{
 		// synchronous compilation
-		pipelineCompiler->Compile(true, true, true);
+		{
+			LowEndShaderWait::ScopedSyncCompile syncCompileScope; // Cemu Low-End: background compile threads step aside meanwhile
+			pipelineCompiler->Compile(true, true, true);
+		}
 		delete pipelineCompiler;
 	}
 

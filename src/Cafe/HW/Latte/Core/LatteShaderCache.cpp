@@ -806,10 +806,9 @@ void LowEndShaderWait_OnFrameEnd()
 	using Clock = std::chrono::steady_clock;
 	static Clock::time_point s_lastFrameEnd = Clock::now();
 	static Clock::time_point s_nextAllowedWait = Clock::now();
-	constexpr float kMaxWaitSeconds = 60.0f; // safety net: after this the game continues even if compilation is not finished
+	constexpr float kMaxWaitSeconds = 30.0f; // safety net: after this the game continues even if compilation is not finished
 
 	const Clock::time_point now = Clock::now();
-	const double frameTimeMs = std::chrono::duration<double, std::milli>(now - s_lastFrameEnd).count();
 	s_lastFrameEnd = now;
 	const uint32 skippedDraws = LowEndShaderWait::skippedDrawsThisFrame.exchange(0, std::memory_order_relaxed);
 
@@ -828,7 +827,7 @@ void LowEndShaderWait_OnFrameEnd()
 	if (mode >= 2)
 		shouldWait = true; // strict: never show a frame with missing objects
 	else
-		shouldWait = (pending >= 6 && skippedDraws >= 8) || frameTimeMs > 120.0; // balanced: only when it is really bad
+		shouldWait = (pending >= 25 && skippedDraws >= 30); // balanced: only when it is extremely bad, slow frames alone never trigger it
 	if (!shouldWait)
 		return;
 
@@ -889,7 +888,7 @@ void LowEndShaderWait_OnFrameEnd()
 
 	// do not count the waiting time as frame time and give the game a moment before another wait can start
 	s_lastFrameEnd = Clock::now();
-	s_nextAllowedWait = s_lastFrameEnd + std::chrono::milliseconds(750);
+	s_nextAllowedWait = s_lastFrameEnd + std::chrono::milliseconds(mode >= 2 ? 750 : 20000); // balanced: at most one wait every 20 seconds
 }
 
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)

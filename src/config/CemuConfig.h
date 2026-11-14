@@ -467,12 +467,14 @@ struct CemuConfig
 		ConfigValue<bool> bilinear_mip_filter{ false };    // trilinear -> bilinear mip filtering (Vulkan)
 		ConfigValue<bool> disable_power_throttling{ false }; // Windows only: opt out of EcoQoS/power throttling
 		ConfigValue<bool> high_res_timer{ false };           // Windows only: request 1ms system timer resolution
-		ConfigValue<sint32> shader_wait_mode{ 1 };         // 0 = off, 1 = balanced (wait only when shader compilation is severe), 2 = strict (wait whenever draws would be skipped). Needs async shader compile (Vulkan)
+		ConfigValue<bool> best_power_mode{ false };         // Windows only: use the "Best performance" power mode while Cemu runs (previous mode is restored afterwards)
+		ConfigValue<sint32> shader_wait_mode{ 0 };         // 0 = off (default), 1 = balanced (wait only when shader compilation is extremely severe), 2 = strict (wait whenever draws would be skipped). Needs async shader compile (Vulkan)
 		ConfigValue<sint32> cpu_mode_override{ 0 };        // 0 = automatic (stock), 1 = singlecore recompiler, 2 = multicore recompiler. Only used when the game profile does not set a CPU mode
 		ConfigValue<sint32> thread_quantum{ 0 };           // 0 = game profile (stock), 1 = 60000, 2 = 80000, 3 = 100000 PPC instructions per thread slice. Only used when the game profile keeps the default
 		ConfigValue<sint32> process_priority{ 1 };         // Windows only: 0 = normal, 1 = above normal (stock), 2 = high
 		ConfigValue<sint32> texture_cleanup_mode{ 0 };     // 0 = stock, 1 = faster (frees unused textures after ~30s), 2 = aggressive (~10s). Saves RAM/shared GPU memory
-		ConfigValue<sint32> compile_threads{ 0 };          // 0 = automatic (stock), 1 or 2 = fixed number of background pipeline compile threads (Vulkan)
+		ConfigValue<sint32> compile_threads{ 0 };          // 0 = automatic (1 thread on CPUs with 4 cores or fewer), 1-3 = fixed number of background compile threads (Vulkan)
+		ConfigValue<sint32> pipeline_cache_save_interval{ 0 }; // 0 = 15 s (stock), 1 = 60 s, 2 = 120 s between saves of the driver pipeline cache (Vulkan)
 		ConfigValue<sint32> compile_thread_priority{ 0 };  // Windows only: 0 = normal (stock), 1 = below normal, 2 = lowest
 		ConfigValue<std::string> shader_import_folder{};   // optional folder with shader caches (<titleid>_shaders.bin / <titleid>_vkpipeline.bin) that are imported when a game starts
 	} lowend{};

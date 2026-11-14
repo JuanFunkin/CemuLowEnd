@@ -428,7 +428,7 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 		lowend_row->SetNonFlexibleGrowMode(wxFLEX_GROWMODE_SPECIFIED);
 
 		auto* lowend_preset = new wxButton(lowend_box, wxID_ANY, _("Apply Low-End preset"));
-		lowend_preset->SetToolTip(_("Turns VSync off, enables asynchronous shader compilation, disables full GX2DrawDone synchronization, uses the bilinear upscale filter and enables the Low-End options below with moderate values.\nThese settings may improve performance but can slightly reduce visual quality. Audio is not changed."));
+		lowend_preset->SetToolTip(_("Turns VSync off, enables asynchronous shader compilation, disables full GX2DrawDone synchronization, uses the bilinear upscale filter and enables the safe Low-End options below (it does not touch CPU mode, thread quantum, priorities or the shader wait screen).\nThese settings may improve performance but can slightly reduce visual quality. Audio is not changed."));
 		lowend_preset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
 			m_vsync->SetSelection(0);
 			m_async_compile->SetValue(true);
@@ -446,23 +446,66 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 			GetConfig().lowend.bilinear_mip_filter = true;
 			GetConfig().lowend.disable_power_throttling = true;
 			GetConfig().lowend.high_res_timer = true;
-			GetConfig().lowend.shader_wait_mode = 1;
-			GetConfig().lowend.process_priority = 2;
+			GetConfig().lowend.shader_wait_mode = 0;
+			GetConfig().lowend.process_priority = 1;
 			GetConfig().lowend.texture_cleanup_mode = 1;
-			GetConfig().lowend.compile_thread_priority = 1;
+			GetConfig().lowend.compile_thread_priority = 0;
 			m_lowend_texture_detail->SetSelection(1);
 			m_lowend_max_aniso->SetSelection(2);
 			m_lowend_lod_bias->SetSelection(0);
 			m_lowend_bilinear_mips->SetValue(true);
 			m_lowend_power_throttling->SetValue(true);
 			m_lowend_high_res_timer->SetValue(true);
-			m_lowend_shader_wait->SetSelection(1);
-			m_lowend_priority->SetSelection(2);
+			m_lowend_shader_wait->SetSelection(0);
+			m_lowend_priority->SetSelection(1);
 			m_lowend_texture_cleanup->SetSelection(1);
-			m_lowend_compile_priority->SetSelection(1);
+			m_lowend_compile_priority->SetSelection(0);
 			LowEndTweaks::ApplyFromConfig();
 		});
 		lowend_sizer->Add(lowend_preset, 0, wxALL, 5);
+
+		auto* lowend_reset = new wxButton(lowend_box, wxID_ANY, _("Reset Low-End options (back to stock Cemu behavior)"));
+		lowend_reset->SetToolTip(_("Turns every Low-End option off and uses the same number of shader compile threads as stock Cemu (3 threads). Useful to find out whether a problem comes from one of these options."));
+		lowend_reset->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+			auto& lowend = GetConfig().lowend;
+			lowend.texture_detail_reduction = 0;
+			lowend.max_anisotropy = -1;
+			lowend.extra_lod_bias = 0;
+			lowend.bilinear_mip_filter = false;
+			lowend.disable_power_throttling = false;
+			lowend.high_res_timer = false;
+			lowend.best_power_mode = false;
+			lowend.shader_wait_mode = 0;
+			lowend.cpu_mode_override = 0;
+			lowend.thread_quantum = 0;
+			lowend.process_priority = 1;
+			lowend.texture_cleanup_mode = 0;
+			lowend.compile_threads = 3; // same as stock Cemu on a CPU with 4 cores
+			lowend.compile_thread_priority = 0;
+			lowend.pipeline_cache_save_interval = 0;
+			lowend.shader_import_folder = std::string();
+			GetConfig().vk_accurate_barriers = true;
+
+			m_lowend_texture_detail->SetSelection(0);
+			m_lowend_max_aniso->SetSelection(0);
+			m_lowend_lod_bias->SetSelection(0);
+			m_lowend_bilinear_mips->SetValue(false);
+			m_lowend_power_throttling->SetValue(false);
+			m_lowend_high_res_timer->SetValue(false);
+			m_lowend_power_mode->SetValue(false);
+			m_lowend_shader_wait->SetSelection(0);
+			m_lowend_cpu_mode->SetSelection(0);
+			m_lowend_thread_quantum->SetSelection(0);
+			m_lowend_priority->SetSelection(1);
+			m_lowend_texture_cleanup->SetSelection(0);
+			m_lowend_compile_threads->SetSelection(3);
+			m_lowend_compile_priority->SetSelection(0);
+			m_lowend_cache_save->SetSelection(0);
+			m_lowend_shader_import->SetValue(wxEmptyString);
+			m_lowend_no_accurate_barriers->SetValue(false);
+			LowEndTweaks::ApplyFromConfig();
+		});
+		lowend_sizer->Add(lowend_reset, 0, wxALL, 5);
 
 		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Texture detail")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
 		m_lowend_texture_detail = new wxChoice(lowend_box, wxID_ANY);
@@ -502,10 +545,10 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 
 		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Shader wait screen")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
 		m_lowend_shader_wait = new wxChoice(lowend_box, wxID_ANY);
-		m_lowend_shader_wait->Append(_("Off"));
+		m_lowend_shader_wait->Append(_("Off (default)"));
 		m_lowend_shader_wait->Append(_("Balanced (only when compilation is severe)"));
 		m_lowend_shader_wait->Append(_("Strict (whenever objects would be missing)"));
-		m_lowend_shader_wait->SetToolTip(_("When many shaders are still compiling and the game would render with missing objects or very low FPS, Cemu pauses at the end of the frame and shows a waiting screen until the shaders are ready, then continues normally.\nRequires 'Async shader compile' to be enabled.\nVulkan only"));
+		m_lowend_shader_wait->SetToolTip(_("When many shaders are still compiling and the game would render with missing objects or very low FPS, Cemu pauses at the end of the frame and shows a waiting screen until the shaders are ready, then continues normally. Off by default because on slow PCs the pauses can be long.\nRequires 'Async shader compile' to be enabled.\nVulkan only"));
 		m_lowend_shader_wait->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
 			GetConfig().lowend.shader_wait_mode = event.GetSelection();
 		});
@@ -562,10 +605,11 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 
 		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Shader compile threads")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
 		m_lowend_compile_threads = new wxChoice(lowend_box, wxID_ANY);
-		m_lowend_compile_threads->Append(_("Automatic"));
+		m_lowend_compile_threads->Append(_("Automatic (1 on 4 cores or fewer)"));
 		m_lowend_compile_threads->Append(_("1 thread"));
 		m_lowend_compile_threads->Append(_("2 threads"));
-		m_lowend_compile_threads->SetToolTip(_("Number of background threads that compile shaders. Fewer threads leave more CPU time for the game on CPUs with few cores, but new shaders take longer to become ready.\nVulkan only. Takes effect the next time a game is started."));
+		m_lowend_compile_threads->Append(_("3 threads"));
+		m_lowend_compile_threads->SetToolTip(_("Number of background threads that compile shaders. Fewer threads leave more CPU time for the game on CPUs with few cores and reduce stutter, but new objects can take a little longer to appear. Automatic uses 1 thread on CPUs with 4 cores or fewer.\nVulkan only. Takes effect the next time a game is started."));
 		m_lowend_compile_threads->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
 			GetConfig().lowend.compile_threads = event.GetSelection();
 		});
@@ -584,6 +628,17 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 #if !BOOST_OS_WINDOWS
 		m_lowend_compile_priority->Disable();
 #endif
+
+		lowend_row->Add(new wxStaticText(lowend_box, wxID_ANY, _("Driver cache save interval")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
+		m_lowend_cache_save = new wxChoice(lowend_box, wxID_ANY);
+		m_lowend_cache_save->Append(_("15 seconds (default)"));
+		m_lowend_cache_save->Append(_("60 seconds"));
+		m_lowend_cache_save->Append(_("120 seconds"));
+		m_lowend_cache_save->SetToolTip(_("How long Cemu waits before saving the driver pipeline cache after new pipelines were compiled. Every save copies and writes the whole cache, which can cause small hitches while many shaders compile. Longer waits mean fewer hitches, but a crash can lose the latest part of this cache (the shader cache itself is not affected).\nVulkan only"));
+		m_lowend_cache_save->Bind(wxEVT_CHOICE, [](wxCommandEvent& event) {
+			GetConfig().lowend.pipeline_cache_save_interval = event.GetSelection();
+		});
+		lowend_row->Add(m_lowend_cache_save, 0, wxALL, 5);
 		lowend_sizer->Add(lowend_row, 0, wxEXPAND, 5);
 
 		auto* lowend_checks = new wxFlexGridSizer(0, 2, 0, 0);
@@ -610,6 +665,14 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 		});
 		lowend_checks->Add(m_lowend_high_res_timer, 0, wxALL, 5);
 
+		m_lowend_power_mode = new wxCheckBox(lowend_box, wxID_ANY, _("Windows 'Best performance' power mode while Cemu runs"));
+		m_lowend_power_mode->SetToolTip(_("Switches the Windows power mode to 'Best performance' while Cemu is running and puts your previous mode back afterwards. On low power CPUs the default mode can keep the clock speed low. Works best when the PC is plugged in and well cooled.\nWindows 10 (1709 or newer) and Windows 11 only"));
+		m_lowend_power_mode->Bind(wxEVT_CHECKBOX, [](wxCommandEvent& event) {
+			GetConfig().lowend.best_power_mode = event.IsChecked();
+			LowEndTweaks::ApplyFromConfig();
+		});
+		lowend_checks->Add(m_lowend_power_mode, 0, wxALL, 5);
+
 		m_lowend_no_accurate_barriers = new wxCheckBox(lowend_box, wxID_ANY, _("Disable accurate barriers (may flicker)"));
 		m_lowend_no_accurate_barriers->SetToolTip(_("Skips some Vulkan synchronization. Can improve performance on weak GPUs but may cause flickering graphics in some games. Not part of the preset, only enable it if you need the extra FPS.\nVulkan only"));
 		m_lowend_no_accurate_barriers->Bind(wxEVT_CHECKBOX, [](wxCommandEvent& event) {
@@ -619,6 +682,7 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 #if !BOOST_OS_WINDOWS
 		m_lowend_power_throttling->Disable();
 		m_lowend_high_res_timer->Disable();
+		m_lowend_power_mode->Disable();
 #endif
 		lowend_sizer->Add(lowend_checks, 0, wxEXPAND, 5);
 
@@ -2178,11 +2242,13 @@ void GeneralSettings2::ApplyConfig()
 	m_lowend_texture_cleanup->SetSelection(config.lowend.texture_cleanup_mode.GetValue());
 	m_lowend_compile_threads->SetSelection(config.lowend.compile_threads.GetValue());
 	m_lowend_compile_priority->SetSelection(config.lowend.compile_thread_priority.GetValue());
+	m_lowend_cache_save->SetSelection(config.lowend.pipeline_cache_save_interval.GetValue());
 	m_lowend_shader_import->SetValue(wxString::FromUTF8(config.lowend.shader_import_folder.GetValue().c_str()));
 	m_lowend_no_accurate_barriers->SetValue(!config.vk_accurate_barriers.GetValue());
 	m_lowend_bilinear_mips->SetValue(config.lowend.bilinear_mip_filter.GetValue());
 	m_lowend_power_throttling->SetValue(config.lowend.disable_power_throttling.GetValue());
 	m_lowend_high_res_timer->SetValue(config.lowend.high_res_timer.GetValue());
+	m_lowend_power_mode->SetValue(config.lowend.best_power_mode.GetValue());
 	m_downscale_filter->SetSelection(config.downscale_filter);
 	m_fullscreen_scaling->SetSelection(config.fullscreen_scaling);
 

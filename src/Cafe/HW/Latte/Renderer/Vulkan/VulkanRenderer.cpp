@@ -2340,7 +2340,10 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 		m_pipeline_cache_semaphore.wait();
 		if (m_destructionRequested)
 			return;
-		for (sint32 i = 0; i < 15 * 4; i++)
+		// Cemu Low-End: optional longer delay between saves of the driver pipeline cache (each save copies and writes the whole cache)
+		const sint32 saveIntervalMode = GetConfig().lowend.pipeline_cache_save_interval.GetValue();
+		const sint32 saveDelaySeconds = saveIntervalMode == 1 ? 60 : (saveIntervalMode >= 2 ? 120 : 15);
+		for (sint32 i = 0; i < saveDelaySeconds * 4; i++)
 		{
 			if (m_destructionRequested)
 				return;

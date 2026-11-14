@@ -73,9 +73,9 @@ private:
 	wxCheckBox* m_userDisplayisSRGB;
 
 	wxCheckBox *m_async_compile, *m_gx2drawdone_sync;
-	wxChoice *m_lowend_texture_detail, *m_lowend_max_aniso, *m_lowend_lod_bias, *m_lowend_shader_wait, *m_lowend_cpu_mode, *m_lowend_thread_quantum, *m_lowend_priority, *m_lowend_texture_cleanup, *m_lowend_compile_threads, *m_lowend_compile_priority;
+	wxChoice *m_lowend_texture_detail, *m_lowend_max_aniso, *m_lowend_lod_bias, *m_lowend_shader_wait, *m_lowend_cpu_mode, *m_lowend_thread_quantum, *m_lowend_priority, *m_lowend_texture_cleanup, *m_lowend_compile_threads, *m_lowend_compile_priority, *m_lowend_cache_save;
 	wxTextCtrl* m_lowend_shader_import;
-	wxCheckBox *m_lowend_bilinear_mips, *m_lowend_power_throttling, *m_lowend_high_res_timer, *m_lowend_no_accurate_barriers;
+	wxCheckBox *m_lowend_bilinear_mips, *m_lowend_power_throttling, *m_lowend_high_res_timer, *m_lowend_no_accurate_barriers, *m_lowend_power_mode;
 #ifdef ENABLE_METAL
 	wxCheckBox *m_force_mesh_shaders;
 #endif

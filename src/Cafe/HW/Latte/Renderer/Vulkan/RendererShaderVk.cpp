@@ -3,6 +3,7 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
+#include "Cafe/HW/Latte/Core/LowEndShaderWait.h"
 #include "util/helpers/ConcurrentQueue.h"
 #include "Cemu/FileCache/FileCache.h"
 
@@ -133,7 +134,14 @@ public:
 		if (m_threadsActive.exchange(true))
 			return;
 		// create thread pool
-		const uint32 threadCount = 2;
+		uint32 threadCount = 2;
+		// Cemu Low-End: same thread setting as the pipeline compile threads (these threads run at normal priority,
+		// so on CPUs with 4 cores or fewer two of them plus the pipeline threads compete heavily with the game)
+		const sint32 lowEndCompileThreads = GetConfig().lowend.compile_threads.GetValue();
+		if (lowEndCompileThreads > 0)
+			threadCount = std::min<uint32>((uint32)lowEndCompileThreads, 2u);
+		else if (GetPhysicalCoreCount() <= 4)
+			threadCount = 1;
 		for (uint32 i = 0; i < threadCount; ++i)
 			s_threads.emplace_back(&_ShaderVkThreadPool::CompilerThreadFunc, this);
 	}
@@ -160,6 +168,7 @@ public:
 		while (m_threadsActive.load(std::memory_order::relaxed))
 		{
 			s_compilationQueueCount.decrementWithWait();
+			LowEndShaderWait::WaitWhileRenderThreadCompiles(); // Cemu Low-End: step aside while the render thread compiles
 			s_compilationQueueMutex.lock();
 			if (s_compilationQueue.empty())
 			{
